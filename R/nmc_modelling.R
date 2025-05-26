@@ -1,5 +1,5 @@
-library(ctmm)
-setwd("~/Dropbox/UBC/Grants/2023_Caribou_Collaring/year_1_report")
+#library(ctmm)
+#setwd("~/Dropbox/UBC/Grants/2023_Caribou_Collaring/year_1_report")
 
 #Data import
 data <- read.csv("nmc_tracking_data.csv")

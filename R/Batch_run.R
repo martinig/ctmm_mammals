@@ -1,8 +1,11 @@
-setwd("~/Dropbox/UBC/Projects/BallisticMotion")
+#setwd("~/Dropbox/UBC/Projects/BallisticMotion")
 
-library(ctmm)
+#library(ctmm)
 
-source("Scripts/Fit_Mods.R")
+#source("Scripts/Fit_Mods.R")
+#April's edit (so we can skip setting the working directory bit at the start)
+source(here("R", "Fit_Mods.R"))
+
 
 FILES <- list.files("~/Dropbox/MultiSpecies_Data/New_Batch",
                     pattern = ".Rda",
