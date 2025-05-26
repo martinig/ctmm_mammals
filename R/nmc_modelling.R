@@ -90,7 +90,7 @@ for(i in 1:length(DATA)){
 }
 
 summary(FITS[[4]]) #, units = FALSE standardizes in seconds
-#google aniotrophic
+#google anisotropic - Describes a material, property, or process that behaves differently depending on the direction in which it is measured. E.g., anisotropic movement means that the probability of moving in one direction differs from the probability of moving in another—often due to landscape features like barriers or gradients
 #area is not useful, use the home range estimate below instead
 #DOF is degrees of freedom, estimated based on the autocorrelation structure, e.g., DOF mean = on the centroid, DOF area = effective sample size for home range estimation, DOF diffusion = how much info you have to estimate this rate, DOF speed = how much info you have to estimate this rate - all these values could go into a meta-analysis
 #your sampling frequency needs to be ~3x the tau v to get an estimate for speed
