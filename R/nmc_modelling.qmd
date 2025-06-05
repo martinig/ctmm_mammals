@@ -72,7 +72,7 @@ pacman::p_load(tidyverse, # tidy family and related pacakges below
 
 ```
 
-### Load data: nmc_tracking_data
+### Load data
 
 ```{r load data}
 #this is from nmc_modelling.R script
@@ -119,10 +119,15 @@ detrend.speeds <- function(DATA, CTMM) {
 ## Movement modelling
 
 Key things to check for/keep in mind: 
+
 1. movebank format is usually okay - you need to have the column individual.local.identifier, this is grabbed first
+
 2. converted Acquisition_Date to timestamp - the timestamp column is grabbed first
+
 3. outliers are 1's, need to be dealt with before proceeding as they mess with the model output
+
 4. there will be warnings and/or errors - those are sanity checks
+
 5. mark.rm = TRUE will remove the outliers
 
 ```{r movement modelling}
@@ -158,7 +163,144 @@ DATA[[5]] <- DATA[[5]][1:2134,] #[2134:3099,] #when there are lots of animals, c
 #uere.fit(DATA[[5]][2134:3099,])
 
 FITS <- list()
+
+for(i in 1:length(DATA)){
+  GUESS <- ctmm.guess(DATA[[i]],interactive=FALSE) #pre-step is guessing the initial parameters, if you run just this line alone for i=4 and interactive=TRUE you get a variogram you can zoom in on. You want to see curvature if you want to estimate speed. If you are estimating home range, you want to see it level off. Red line is model estimate, black line is actual data
+  GUESS$error <- TRUE #this is the DOP of 10 unless you do calibration (see above - lines 71 to 76)
+  FITS[[i]] <- ctmm.select(DATA[[i]], GUESS, trace = 2) #trace 2 shows you the model is running in the console
+  save(FITS, file = "nmc_models.Rda")
+  print(i)
+}
+
+summary(FITS[[4]]) #, units = FALSE standardizes in seconds
+#google anisotropic - Describes a material, property, or process that behaves differently depending on the direction in which it is measured. E.g., anisotropic movement means that the probability of moving in one direction differs from the probability of moving in another—often due to landscape features like barriers or gradients
+#area is not useful, use the home range estimate below instead
+#DOF is degrees of freedom, estimated based on the autocorrelation structure, e.g., DOF mean = on the centroid, DOF area = effective sample size for home range estimation, DOF diffusion = how much info you have to estimate this rate, DOF speed = how much info you have to estimate this rate - all these values could go into a meta-analysis
+#your sampling frequency needs to be ~3x the tau v to get an estimate for speed
+#tau p positional autocorrelational time scale (how long until it reverts back to the mean - i.e., return to the center of its home range)
+#the speed estimate from here is from the fitted model, you can get a better estimate elsewhere
+#diffusion (think if you drop ink in water, how long does it take to spread out) - this should be a straight line - you can often get this even if you can't get speed - this is a good variable, correlates almost perfectly with speed
+
+names(FITS) <- names(DATA)
+save(FITS, file = "nmc_models.Rda")
 ```
+
+### Metrics
+::: panel-tabset
+
+#### Range crossing time
+```{r range crossing}
+meta(FITS[pink], variable = "tau position") #pink is the name of the herd
+meta(FITS[muskwa], variable = "tau position")
+meta(list(muskwa = UDS[muskwa],
+          pink = UDS[pink]),
+     variable = "tau position")
+```
+
+#### Tau velocity
+```{r tau_v}
+meta(FITS[pink], variable = "tau velocity")
+meta(FITS[muskwa], variable = "tau velocity")
+```
+
+#### Diffusion rates
+```{r diffusion rates}
+meta(FITS[pink], variable = "diffusion")
+meta(FITS[muskwa], variable = "diffusion")
+meta(list(muskwa = UDS[muskwa],
+          pink = UDS[pink]),
+     variable = "diffusion")
+```
+
+#### Home range
+```{r home range estimation}
+# create aligned UDs
+UDS <- akde(DATA,FITS, weights = TRUE) #estimates the home range conditional on the fitted model, weights = TRUE use this if the sampling is uneven, it upweights and downweights the sampling based 
+save(UDS, file = "nmc_home_ranges.Rda")
+
+meta(UDS[pink])
+
+meta(UDS[muskwa])
+
+meta(list(muskwa = UDS[muskwa], pink = UDS[pink]), variable = "area")
+```
+
+#### Population range
+```{r population range estimation}
+#Get Pink Mountain pkde
+pink_data <- DATA[pink]
+pink_FITS <- FITS[pink]
+pink_UDs <- UDS[pink]
+
+#Estimate pkde for the pink mountain herd
+pink_PKDE <- pkde(pink_data,pink_UDs) #this likely won't be needed (but it estimates the population kernel density estimate)
+save(pink_PKDE, file = "pink_PKDE.Rda")
+
+#Get Muskwa pkde
+muskwa <- unique(data[data$Pop_Unit == "Muskwa","WLH_ID"])
+muskwa_data <- DATA[muskwa]
+muskwa_FITS <- FITS[muskwa]
+muskwa_UDs <- UDS[muskwa]
+
+#Estimate pkde for the muskwa herd
+muskwa_PKDE <- pkde(muskwa_data,muskwa_UDs)
+save(muskwa_PKDE, file = "muskwa_PKDE.Rda")
+```
+
+#### Speed
+```{r speed estimation}
+
+#speed is the average speed
+#test<-speed(DATA[[4]], FITS[[4]]) 
+#surprisingly less data = it takes longer to run
+#test #this gives you the speed estimate - this is going to be very different between the output it gives at the model level
+
+#speeds is the instantaneous movement speed at each time stamp
+#test<-speeds(DATA[[4]], FITS[[4]]) 
+#head(test)
+#test<-speeds(DATA[[4]], FITS[[4]], level=NA) #returns the DOF and VAR for each timestep instead of 95% CIs
+#plot(est ~ t, data=test) #note that the speed never reaches zero #this is why there is the detrends speed function above (on line 13 above) 
+#instead of using the speeds function, use the detrend.speeds function above (it pulls all the individuals down to the same start point, i.e., 0)
+
+SPEEDS <- list()
+
+for(i in 1:length(DATA)){
+  if(grepl("OUF",summary(FITS[[i]])$name)){
+    
+    #Estimate the speeds with the model detrended
+    nmc_speed <- detrend.speeds(DATA[[i]], FITS[[i]])
+    
+    #Carpentry and export
+    nmc_speed$WLH_ID <- DATA[[i]]@info$identity
+    nmc_speed$Longitude  <- DATA[[i]]$longitude
+    nmc_speed$Latitude  <- DATA[[i]]$latitude
+    nmc_speed$temp_c <- data[as.numeric(row.names(nmc_speed)),"temp_c"]
+    SPEEDS[[length(SPEEDS)+1]] <- nmc_speed
+  }
+  print(i)
+}
+
+SPEEDS <- do.call(rbind, SPEEDS)
+
+write.csv(SPEEDS, file = "nmc_speeds2.csv")
+```
+
+```{r plot}
+#| fig-cap: "**Figure S1.** Text TBD"
+
+plot(est ~ temp_c, data = SPEEDS)
+
+#png(filename="/Users/michaelnoonan/Dropbox/UBC/Grants/2023_Caribou_Collaring/year_1_report/NMC_data.png", width = 4, height = 6, units = "in", res = 600)
+```
+
+```{r plot}
+#| fig-cap: "**Figure S2.** Text TBD"
+
+projection(DATA) <- median(DATA)
+plot(DATA, col = viridis::viridis(9))
+dev.off()
+```
+
 :::
 
 ## R Session Information
