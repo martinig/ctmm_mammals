@@ -1,0 +1,169 @@
+---
+title: "**ctmm analysis mammals**"
+subtitle: "**Supplmentary Material**"
+author: "Martinig, A. R., and M. J. Noonan"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    toc-title: "**Table of Contents**"
+    output-file: "index.html"
+    theme:
+      dark: darkly
+      light: flatly
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+    number-sections: true
+    #bibliography: ./bib/ref.bib
+    fontsize: "12"
+    max-width: "10"
+    code-overflow: wrap
+crossref: 
+  fig-title: Figure     # (default is "Figure")
+  tbl-title: Table     # (default is "Table")
+  title-delim: —     # (default is ":")
+  fig-prefix: Fig.   # (default is "Figure")
+  tbl-prefix: Tab.    # (default is "Table")
+editor_options: 
+  chunk_output_type: console
+execute:
+  warning: false
+  message: false
+  tidy: true
+  #cache: true
+---
+
+## Setting up
+
+### Load packages
+
+```{r load packages}
+#force install pacman
+
+#install.packages("pacman")
+#pacman::p_load(devtools, tidyverse, metafor, patchwork, R.rsp, emmeans)
+
+#load all other packages
+pacman::p_load(tidyverse, # tidy family and related pacakges below
+               kableExtra, # nice tables
+               ctmm,  
+               fitdistrplus,
+               metRology,
+               DAAG, 
+               ggdist,
+               lme4,
+               mgcv,
+               ggplot2, # post-hoc tests
+               gridExtra, 
+               pander,   # nice tables
+               metafor,  # package for meta-analysis
+               ape,      # phylogenetic analysis
+               ggtree,
+               ggstance,
+               MuMIn,  # multi-model inference
+               patchwork,   # putting ggplots together - you need to install via devtool
+               here,    # making reading files easy
+               MASS,
+               cowplot #multipanel plots
+)
+
+```
+
+### Load data: nmc_tracking_data
+
+```{r load data}
+#this is from nmc_modelling.R script
+data <- read.csv(here("data", "nmc_tracking_data.csv"))
+data <- data[data$outlier !=1,]
+
+#Get herd IDs
+pink <- unique(data[data$Pop_Unit == "Pink Mountain","WLH_ID"])
+muskwa <- unique(data[data$Pop_Unit == "Muskwa","WLH_ID"])
+
+```
+
+### Function for detrending the speeds
+
+```{r detrending the speeds}
+detrend.speeds <- function(DATA, CTMM) {
+  
+  # estimate speeds conditional on the data
+  EST <- speeds(DATA, CTMM, fast=TRUE, level=NULL)
+  # null estimates of speed (no data, only model)
+  EST.NULL <- speeds(CTMM, t=DATA$t, fast=TRUE, level=NULL)
+  
+  # reduce DOF by that of null distribution
+  DOF <- EST$DOF - EST.NULL$DOF
+  all(DOF>0) # check for validity... always has held so far
+  DOF <- pmax(0,DOF) # haven't needed this, but just in case
+  
+  S2 <- EST$speed^2 + EST$VAR
+  
+  AVE <- (EST$DOF*S2)/DOF
+  
+  # Calculate CIs
+  CI <- sapply(1:length(DATA$t), function(i){ctmm:::chisq.ci(AVE[i], DOF=DOF[i], level=0.95, robust=TRUE)})
+  CI <- sqrt(CI)
+  
+  SPEEDS <- as.data.frame(t(CI))
+  SPEEDS$time <- DATA$timestamp
+  
+  return(SPEEDS)
+}
+
+```
+
+## Movement modelling
+
+Key things to check for/keep in mind: 
+1. movebank format is usually okay - you need to have the column individual.local.identifier, this is grabbed first
+2. converted Acquisition_Date to timestamp - the timestamp column is grabbed first
+3. outliers are 1's, need to be dealt with before proceeding as they mess with the model output
+4. there will be warnings and/or errors - those are sanity checks
+5. mark.rm = TRUE will remove the outliers
+
+```{r movement modelling}
+#Convert to telemetry object
+DATA <- as.telemetry(data)
+
+#summary(DATA) gives the sampling interval and coordinates if you want to plot the summary data
+#plot(DATA) is a nice plot function to visualize the data 
+#plot(DATA, col=rainbow(length(DATA)))
+#class(DATA[[1]])
+#test<-DATA[[1]]
+#head(test)
+#HDOP is the measurement error (horizontal dilution of precision)
+#test@info #this gives you the identity if you need the know the individual dataset
+#test@UERE #each collar manufacturer will give a different value for this, it converts the DOP value into an error in meters (DOP of 1 is 10 meters)
+#another example for errors: test<-oulie(turtle[[3]]) #you will see drifting in the movement, this is a vague spot where you have to make subjective decisions, cross that bridge when you get to it
+
+#test<-oulie(DATA[[4]]) #the farther an animal gets away from it's core use area is more red and larger points (red is less informative - those are distance based outliers)
+#head(test)
+#plot(test) #the blue lines connect the locations, they get thicker and more blue as the speed increases (you want to see connections between paths, but watch for the angles, they shouldn't be too tight) (blue are more informative - these are the speed based outliers)
+#plot(test, units=FALSE) #changes the units
+
+#fit error parameters to calibration data
+UERE<-uere.fit(DATA[[5]][2134:3099,])
+#do not run uere.fit on data where they are actually moving
+
+#estimated error model parameters
+summary(UERE)
+
+#Drop mortality event
+DATA[[5]] <- DATA[[5]][1:2134,] #[2134:3099,] #when there are lots of animals, consider just dropping it 
+
+#uere.fit(DATA[[5]][2134:3099,])
+
+FITS <- list()
+```
+:::
+
+## R Session Information
+
+```{r}
+# pander for making it look nicer
+sessionInfo() %>% pander()
+```
